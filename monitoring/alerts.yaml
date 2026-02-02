@@ -1,0 +1,50 @@
+groups:
+- name: movie_recommender_alerts
+  rules:
+  
+  # 1. High Error Rate (> 5%)
+  # Critical: If more than 5% of requests are failing, the service is broken.
+  - alert: HighErrorRate
+    expr: |
+      sum(rate(recommendation_errors_total[5m])) 
+      / 
+      sum(rate(recommendation_requests_total[5m])) > 0.05
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High recommendation error rate detected"
+      description: "Error rate is {{ $value | humanizePercentage }} (threshold 5%). Check logs for exceptions."
+
+  # 2. High Latency (P95 > 500ms)
+  # Warning: User experience is degrading.
+  - alert: HighLatency
+    expr: histogram_quantile(0.95, sum(rate(recommendation_latency_seconds_bucket[5m])) by (le)) > 0.5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High P95 latency detected"
+      description: "P95 latency is {{ $value | humanizeDuration }} (threshold 500ms). Check database performance or resource usage."
+
+  # 3. Database Down (Connectivity Issues)
+  # Critical: Cannot serve recommendations.
+  - alert: DatabaseConnectFailure
+    expr: rate(recommendation_errors_total{error_type="OperationalError"}[1m]) > 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Database connection failures detected"
+      description: "Service is unable to connect to the database. Immediate investigation required."
+
+  # 4. Model Load Failure (Critical Startup/Health Issue)
+  # Critical: If we can't report model version, the model might not be loaded.
+  - alert: ModelLoadFailure
+    expr: absent(model_version_info) == 1
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Model version info missing"
+      description: "The application is running but not reporting model version. Model artifacts may have failed to load."

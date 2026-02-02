@@ -1,0 +1,43 @@
+---
+# ML Training Configuration
+
+# Model Version
+model_version: "v1.0.0"
+
+# Data Source
+data_source:
+  tmdb_api_base: "https://api.themoviedb.org/3"
+  popular_pages: 50  # Fetch 50 pages of popular movies (~1000 movies)
+  min_vote_count: 100  # Filter movies with at least 100 votes
+  language: "en-US"
+
+# TF-IDF Configuration
+tfidf:
+  max_features: 5000
+  ngram_range: [1, 2]  # Unigrams and bigrams
+  min_df: 1  # Minimum document frequency
+  max_df: 1.0  # Maximum document frequency (ignore very common words)
+  use_idf: true
+  sublinear_tf: true  # Use sublinear term frequency scaling
+
+# Feature Engineering
+features:
+  text_fields:
+    - overview
+    - genres
+    - keywords
+  weight_overview: 1.0
+  weight_genres: 0.5
+  weight_keywords: 0.3
+
+# Artifact Storage
+artifacts:
+  base_dir: "artifacts/tfidf"
+  save_format: "pickle"  # pickle or joblib
+  compress: true
+
+# Evaluation
+evaluation:
+  sample_movies: 10  # Number of movies to test recommendations
+  top_n: 10  # Number of recommendations to generate
+  min_similarity_threshold: 0.1

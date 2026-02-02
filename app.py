@@ -1,5 +1,6 @@
 import requests
 import streamlit as st
+import html
 
 # =============================
 # CONFIG
@@ -103,8 +104,11 @@ def poster_grid(cards, cols=6, key_prefix="grid"):
                     if tmdb_id:
                         goto_details(tmdb_id)
 
+                # Securely render title
+                safe_title = html.escape(title)
                 st.markdown(
-                    f"<div class='movie-title'>{title}</div>", unsafe_allow_html=True
+                    f"<div class='movie-title'>{safe_title}</div>",
+                    unsafe_allow_html=True,
                 )
 
 
