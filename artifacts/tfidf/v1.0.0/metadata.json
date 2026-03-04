@@ -1,0 +1,44 @@
+{
+  "model_version": "v1.0.0",
+  "trained_on": "2026-02-02T14:57:57.136416Z",
+  "num_movies": 1681,
+  "tfidf_config": {
+    "max_features": 5000,
+    "ngram_range": [
+      1,
+      2
+    ],
+    "min_df": 1,
+    "max_df": 1.0,
+    "use_idf": true,
+    "sublinear_tf": true
+  },
+  "feature_config": {
+    "text_fields": [
+      "overview",
+      "genres",
+      "keywords"
+    ],
+    "weight_overview": 1.0,
+    "weight_genres": 0.5,
+    "weight_keywords": 0.3
+  },
+  "metrics": {
+    "avg_similarity": 0.014781862042403797,
+    "median_similarity": 0.004932470046640925,
+    "std_similarity": 0.02322565879529464,
+    "sparsity": 0.9948640095181439,
+    "matrix_shape": [
+      1681,
+      5000
+    ],
+    "nnz": 43168
+  },
+  "vocabulary_size": 5000,
+  "artifact_paths": {
+    "tfidf_matrix": "artifacts/tfidf/v1.0.0/tfidf_matrix.pkl",
+    "vectorizer": "artifacts/tfidf/v1.0.0/vectorizer.pkl",
+    "indices": "artifacts/tfidf/v1.0.0/indices.pkl",
+    "dataframe": "artifacts/tfidf/v1.0.0/movies.pkl"
+  }
+}
