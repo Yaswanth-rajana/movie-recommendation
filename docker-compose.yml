@@ -1,0 +1,30 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: movie_rec_api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///movie_rec.db
+      - ALLOWED_ORIGINS=http://localhost:8501,http://ui:8501,http://127.0.0.1:8501
+    volumes:
+      - ./movie_rec.db:/app/movie_rec.db
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: movie_rec_ui
+    ports:
+      - "8501:8501"
+    environment:
+      # In a real environment like VPS, replace 'api' with the live domain OR point to 'http://api:8000' and map correctly. 
+      # Since Streamlit runs on the user's browser, the API URL needs to be accessible from the browser! 
+      # Therefore we map api to localhost:8000 for local deployment
+      - API_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
