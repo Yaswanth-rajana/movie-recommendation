@@ -98,3 +98,28 @@ CREATE TABLE IF NOT EXISTS api_metrics (
 CREATE INDEX IF NOT EXISTS idx_metrics_endpoint ON api_metrics(endpoint, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON api_metrics(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_metrics_status ON api_metrics(status_code, timestamp DESC);
+
+-- ============================================
+-- Table: movielens_ratings (Ground Truth)
+-- Purpose: Store explicit ratings from MovieLens 100K for evaluation
+-- ============================================
+CREATE TABLE IF NOT EXISTS movielens_ratings (
+    user_id INTEGER NOT NULL,
+    movielens_movie_id INTEGER NOT NULL,
+    rating REAL NOT NULL,
+    timestamp INTEGER,
+    PRIMARY KEY (user_id, movielens_movie_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ml_ratings_user ON movielens_ratings(user_id);
+CREATE INDEX IF NOT EXISTS idx_ml_ratings_movie ON movielens_ratings(movielens_movie_id);
+
+-- ============================================
+-- Table: movielens_tmdb_map (Dataset Mapping)
+-- Purpose: Map MovieLens IDs to local TMDB IDs for evaluation
+-- ============================================
+CREATE TABLE IF NOT EXISTS movielens_tmdb_map (
+    movielens_movie_id INTEGER PRIMARY KEY,
+    tmdb_id INTEGER NOT NULL,
+    match_method TEXT -- 'title_year' | 'title_only'
+);

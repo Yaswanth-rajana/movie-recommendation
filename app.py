@@ -218,6 +218,14 @@ with st.sidebar:
         index=0,
     )
     grid_cols = st.slider("Grid columns", 4, 8, 6)
+    
+    st.markdown("---")
+    st.markdown("### 👤 User Recommendations")
+    user_id = st.number_input("User ID (1-943)", min_value=1, max_value=943, value=1)
+    if st.button("Get Personal Recs"):
+        st.session_state.view = "cf_recs"
+        st.session_state.user_id = user_id
+        st.rerun()
 
 # =============================
 # HEADER
@@ -376,3 +384,31 @@ elif st.session_state.view == "details":
                 st.warning("No recommendations available right now.")
     else:
         st.warning("No title available to compute recommendations.")
+
+# ==========================================================
+# VIEW: CF RECOMMENDATIONS
+# ==========================================================
+elif st.session_state.view == "cf_recs":
+    user_id = st.session_state.get("user_id", 1)
+    st.markdown(f"### 👤 Recommendations for User {user_id}")
+    
+    if st.button("← Back to Home"):
+        goto_home()
+        
+    cf_data, err = api_get_json(f"/recommend/cf", params={"user_id": user_id, "top_n": 12})
+    
+    if err:
+        st.error(f"Failed to get CF recommendations: {err}")
+    elif not cf_data:
+        st.info("No recommendations found for this user (possible Cold Start).")
+    else:
+        # Convert to cards format
+        cf_cards = []
+        for item in cf_data:
+            cf_cards.append({
+                "tmdb_id": item["id"],
+                "title": item["title"],
+                "poster_url": item["poster_url"]
+            })
+            
+        poster_grid(cf_cards, cols=grid_cols, key_prefix="cf_recs")

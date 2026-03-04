@@ -56,6 +56,7 @@ from monitoring.logger import (
     log_model_load,
 )
 from recommender.hybrid import HybridRecommender
+from ml.cf_model import CollaborativeFilter
 
 # Load environment
 load_dotenv()
@@ -83,6 +84,7 @@ tfidf_matrix: Any = None
 indices: Dict[str, int] = {}
 model_metadata: Dict[str, Any] = {}
 hybrid_recommender: Optional[HybridRecommender] = None
+cf_model: Optional[CollaborativeFilter] = None
 
 
 # ============================================
@@ -97,7 +99,7 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model and initialize resources on startup."""
-    global df, tfidf_matrix, indices, model_metadata, hybrid_recommender
+    global df, tfidf_matrix, indices, model_metadata, hybrid_recommender, cf_model
 
     print(f"\n{'='*60}")
     print(f"🚀 Starting Movie Recommendation API")
@@ -153,6 +155,16 @@ async def lifespan(app: FastAPI):
 
         # Initialize hybrid recommender
         hybrid_recommender = HybridRecommender(DATABASE_PATH)
+        
+        # Initialize Collaborative Filter
+        print("📦 Loading Collaborative Filtering Model...")
+        cf_model = CollaborativeFilter()
+        try:
+            cf_model.load("artifacts/cf/v1.0.0")
+            print("   ✓ Loaded CF model")
+        except Exception as e:
+            print(f"   ⚠️ Failed to load CF model: {e}")
+            cf_model = None
 
         # Update database stats
         if os.path.exists(DATABASE_PATH):
@@ -285,6 +297,34 @@ async def get_movie_from_db(tmdb_id: int) -> Optional[Dict[str, Any]]:
             columns = [desc[0] for desc in cursor.description]
             return dict(zip(columns, row))
 
+async def get_movies_details_batch(tmdb_ids: List[int]) -> Dict[int, Dict]:
+    """Fetch details for multiple movies."""
+    if not tmdb_ids or not os.path.exists(DATABASE_PATH):
+        return {}
+        
+    placeholders = ",".join("?" for _ in tmdb_ids)
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            f"SELECT tmdb_id, title, poster_path, genres FROM movies WHERE tmdb_id IN ({placeholders})",
+            tmdb_ids
+        ) as cursor:
+            rows = await cursor.fetchall()
+            
+    results = {}
+    for row in rows:
+        genres = []
+        if row[3]:
+            try:
+                genres = json.loads(row[3])
+            except:
+                pass
+                
+        results[row[0]] = {
+            "title": row[1],
+            "poster_path": row[2],
+            "genres": genres
+        }
+    return results
 
 async def search_movies_in_db(query: str, limit: int = 20) -> List[Dict[str, Any]]:
     """Search movies in local database."""
@@ -338,11 +378,11 @@ async def get_movies_by_category(category: str, limit: int = 20) -> List[Dict[st
         order_by = "ORDER BY vote_average DESC"
     elif category == "popular":
         query = "SELECT tmdb_id, title, poster_path, release_date, vote_average, popularity FROM movies"
-        order_by = "ORDER BY popularity DESC"
+        order_by = "ORDER BY vote_count DESC"
     else:
         # Default to popular
         query = "SELECT tmdb_id, title, poster_path, release_date, vote_average, popularity FROM movies"
-        order_by = "ORDER BY popularity DESC"
+        order_by = "ORDER BY vote_count DESC"
 
     final_sql = f"{query} {order_by} LIMIT ?"
 
@@ -562,6 +602,95 @@ async def recommend_tfidf(
         )
         raise HTTPException(status_code=500, detail=f"Recommendation failed: {e}")
 
+@app.get("/recommend/cf", response_model=List[RecommendationItem])
+@limiter.limit(f"{RATE_LIMIT}/minute")
+@track_request_metrics("recommend_cf")
+async def recommend_cf(
+    request: Request,
+    user_id: int = Query(..., ge=1),
+    top_n: int = Query(10, ge=1, le=50),
+):
+    """Get Collaborative Filtering recommendations for a user."""
+    global cf_model
+    
+    if not cf_model:
+        raise HTTPException(
+            status_code=503, 
+            detail="Collaborative Filtering model not available"
+        )
+        
+    start_time = time.time()
+    
+    try:
+        # Get raw recommendations (MovieLens IDs)
+        raw_recs = cf_model.recommend(user_id, top_n=top_n * 2) # Fetch extra to handle mapping failures
+        
+        if not raw_recs:
+             # Cold start or invalid user
+             # Fallback to popular movies? Or just return empty?
+             # For now, let's return empty and client handles it
+             return []
+
+        # Map MovieLens IDs to TMDB IDs
+        movielens_ids = [r['movielens_id'] for r in raw_recs]
+        placeholders = ",".join("?" for _ in movielens_ids)
+        
+        tmdb_map = {}
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+             async with db.execute(
+                f"SELECT movielens_movie_id, tmdb_id FROM movielens_tmdb_map WHERE movielens_movie_id IN ({placeholders})",
+                movielens_ids
+             ) as cursor:
+                rows = await cursor.fetchall()
+                for row in rows:
+                    tmdb_map[row[0]] = row[1]
+        
+        # Filter and map to TMDB IDs
+        tmdb_recs = []
+        for r in raw_recs:
+            ml_id = r['movielens_id']
+            if ml_id in tmdb_map:
+                tmdb_recs.append({
+                    "tmdb_id": tmdb_map[ml_id],
+                    "score": r['score']
+                })
+                
+        # Get Movie Details
+        tmdb_ids = [r['tmdb_id'] for r in tmdb_recs[:top_n]]
+        movie_details = await get_movies_details_batch(tmdb_ids)
+        
+        recommendations = []
+        for r in tmdb_recs:
+            if len(recommendations) >= top_n:
+                break
+                
+            tmdb_id = r['tmdb_id']
+            if tmdb_id in movie_details:
+                details = movie_details[tmdb_id]
+                recommendations.append(
+                    RecommendationItem(
+                        title=details['title'],
+                        id=tmdb_id,
+                        score=r['score'],
+                        poster_url=make_img_url(details.get('poster_path')),
+                        score_breakdown={"cf_score": r['score']}
+                    )
+                )
+        
+        latency_ms = (time.time() - start_time) * 1000
+        log_recommendation(
+            movie_title=f"User {user_id}",
+            num_recommendations=len(recommendations),
+            latency_ms=latency_ms,
+            model_version="cf-v1.0.0",
+            method="collaborative_filtering",
+        )
+        
+        return recommendations
+        
+    except Exception as e:
+        log_error("cf_error", str(e), endpoint="/recommend/cf", title=str(user_id))
+        raise HTTPException(status_code=500, detail=f"CF Recommendation failed: {e}")
 
 @app.get("/movie/{tmdb_id}", response_model=MovieDetails)
 async def get_movie_details(tmdb_id: int):

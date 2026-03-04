@@ -8,7 +8,7 @@ model_version: "v1.0.0"
 data_source:
   tmdb_api_base: "https://api.themoviedb.org/3"
   popular_pages: 50  # Fetch 50 pages of popular movies (~1000 movies)
-  min_vote_count: 100  # Filter movies with at least 100 votes
+  min_vote_count: 0  # Include all movies for evaluation
   language: "en-US"
 
 # TF-IDF Configuration
